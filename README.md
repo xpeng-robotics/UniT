@@ -7,9 +7,6 @@
   <a href="https://xpeng-robotics.github.io/unit/UniT.pdf">
     <img alt="Paper" src="https://img.shields.io/badge/Paper-PDF-e63946?style=flat-square">
   </a>
-  <a href="#citation">
-    <img alt="BibTeX" src="https://img.shields.io/badge/BibTeX-Cite-gray?style=flat-square">
-  </a>
 </p>
 
 <p align="center">
@@ -62,35 +59,18 @@ cross-embodiment manifold.
 ## Status
 
 > **The code release is in progress.** This repository currently hosts only the
-> paper, project page link, and citation. Training code, inference code, pretrained
+> paper and project page link. Training code, inference code, pretrained
 > checkpoints, and data preparation scripts will be released here progressively.
 > Please watch the repository for updates.
 
-Planned release contents:
+Planned release order:
 
+- [ ] Data preparation scripts
+- [ ] Pretrained checkpoints
 - [ ] UniT tokenizer — training & inference
 - [ ] VLA-UniT — training & evaluation on RoboCasa GR1
 - [ ] WM-UniT — training & sampling on RoboCasa GR1 and GR00T-Teleop mixtures
-- [ ] Pretrained checkpoints
-- [ ] Data preparation scripts
 - [ ] Real-world deployment stack
-
-## Citation
-
-If you find this work useful, please cite:
-
-```bibtex
-@article{chen2026unit,
-  title   = {UniT: Toward a Unified Physical Language for Human-to-Humanoid Policy Learning and World Modeling},
-  author  = {Chen, Boyu and Chen, Yi and Qiu, Lu and Bai, Jerry and Ge, Yuying and Ge, Yixiao},
-  year    = {2026}
-}
-```
-
-## Acknowledgments
-
-We thank Chuan Ma for sharing the codebases for world model experiments, and Hui
-Zhou for his help with the real-robot infrastructure and teleoperation data.
 
 ## Contact
 
