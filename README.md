@@ -26,6 +26,10 @@
   <sub>Correspondence: <a href="mailto:yyge13@gmail.com">yyge13@gmail.com</a></sub>
 </p>
 
+<p align="center">
+  <img src="assets/teaser.jpeg" alt="UniT teaser — from human demonstration to humanoid policy and world model" width="100%">
+</p>
+
 ---
 
 > **Project page:** <https://xpeng-robotics.github.io/unit/>
@@ -75,5 +79,7 @@ Planned release order:
 ## Contact
 
 For questions about the paper or the upcoming release, please open an issue in
-this repository, or reach out to Yuying Ge at
-[yyge13@gmail.com](mailto:yyge13@gmail.com).
+this repository, or reach out to:
+
+- Yuying Ge &mdash; [yyge13@gmail.com](mailto:yyge13@gmail.com) *(corresponding author)*
+- Boyu Chen &mdash; [boyuc448@gmail.com](mailto:boyuc448@gmail.com)
