@@ -11,7 +11,7 @@
 
 <p align="center">
   <b>Boyu Chen</b><sup>1,2,*</sup> &nbsp;·&nbsp;
-  <b>Yi Chen</b><sup>1,3,*,&Dagger;</sup> &nbsp;·&nbsp;
+  <b>Yi Chen</b><sup>1,3,*</sup> &nbsp;·&nbsp;
   <b>Lu Qiu</b><sup>3</sup> &nbsp;·&nbsp;
   <b>Jerry Bai</b><sup>1</sup> &nbsp;·&nbsp;
   <b>Yuying Ge</b><sup>1,&dagger;</sup> &nbsp;·&nbsp;
@@ -21,7 +21,7 @@
   <sup>2</sup>Tsinghua University &nbsp;·&nbsp;
   <sup>3</sup>The University of Hong Kong
   <br>
-  <sub><sup>*</sup>Equal contribution &nbsp;&nbsp; <sup>&dagger;</sup>Corresponding author &nbsp;&nbsp; <sup>&Dagger;</sup>Project lead</sub>
+  <sub><sup>*</sup>Equal contribution &nbsp;&nbsp; <sup>&dagger;</sup>Corresponding author</sub>
   <br>
   <sub>Correspondence: <a href="mailto:yyge13@gmail.com">yyge13@gmail.com</a></sub>
 </p>
