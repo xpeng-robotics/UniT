@@ -12,7 +12,7 @@
 <p align="center">
   <b>Boyu Chen</b><sup>1,2,*</sup> &nbsp;·&nbsp;
   <b>Yi Chen</b><sup>1,3,*</sup> &nbsp;·&nbsp;
-  <b>Lu Qiu</b><sup>3</sup> &nbsp;·&nbsp;
+  <b>Lu Qiu</b><sup>1,3</sup> &nbsp;·&nbsp;
   <b>Jerry Bai</b><sup>1</sup> &nbsp;·&nbsp;
   <b>Yuying Ge</b><sup>1,&dagger;</sup> &nbsp;·&nbsp;
   <b>Yixiao Ge</b><sup>1</sup>
