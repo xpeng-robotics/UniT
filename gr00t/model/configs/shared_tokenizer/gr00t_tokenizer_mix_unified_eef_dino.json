@@ -1,0 +1,201 @@
+{
+  "model_type": "gr00t_tokenizer",
+  "architectures": [
+    "GR00T_Tokenizer"
+  ],
+  "torch_dtype": "bfloat16",
+  "transformers_version": "4.51.3",
+  "compute_dtype": "float32",
+  "use_multi_scenario_training": true,
+  "_comment_basic": "========== Basic Parameters ==========",
+  "action_horizon": 16,
+  "action_dim": 128,
+  "state_dim": 128,
+  "query_num": 8,
+  "hidden_size" : 1024,
+  
+  "_comment_backbone": "========== Backbone Configuration (Vision Model Only) ==========",
+  "backbone_cfg": {
+    "vision_model_type": "dinov2",
+    "dinov2_path": "facebook/dinov2-large",
+    "dinov2_layer_index": -2,
+    "_comment_layer_index": "Layer index: -1=last layer, -2=second-to-last, 0-N=specific layer",
+    "_comment_eagle_path": "HF hub id or local path for Qwen2.5-VL (passed to AutoModel/AutoProcessor).",
+    "eagle_path": "Qwen/Qwen2.5-VL-3B-Instruct",
+    "load_bf16": false,
+    "project_to_dim": null,
+    "reproject_vision": false,
+    "select_layer": 12,
+    "tune_llm": false,
+    "tune_visual": false,
+    "use_flash_attention": true,
+    "use_torch_compile": false,
+    "tune_bridge_embedding": false
+  },
+  
+  "_comment_vision_branch": "========== Vision Branch Encoder ==========",
+  "vision_branch_cfg": {
+    "hidden_size": 1024,
+    "query_num": 8,
+    "m_former_cfg": {
+      "hidden_size": 1024,
+      "num_hidden_layers": 4,
+      "num_attention_heads": 16,
+      "intermediate_size": 3072,
+      "hidden_dropout_prob": 0.0,
+      "attention_probs_dropout_prob": 0.0,
+      "query_num": 8,
+      "input_hidden_size": 1024,
+      "max_seq_len": 1024
+    }
+  },
+  
+  "_comment_action_encoder": "========== Action Encoder ==========",
+  "action_encoder_cfg": {
+    "action_dim": 128,
+    "state_dim": 128,
+    "action_horizon": 16,
+    "hidden_size": 1024,
+    "query_num": 8,
+    "max_num_embodiments": 30,
+    "num_conv_layers": 3,
+    "conv_kernel_size": 5,
+    "conv_stride": 2,
+    "use_dilation": true,
+    "dropout": 0.0,
+    "downsample_target_len": null,
+    "conv_encoder_type": "resnet",
+    "m_former_cfg": {
+      "hidden_size": 1024,
+      "num_hidden_layers": 4,
+      "num_attention_heads": 16,
+      "intermediate_size": 3072,
+      "hidden_dropout_prob": 0.0,
+      "attention_probs_dropout_prob": 0.0,
+      "query_num": 8,
+      "input_hidden_size": 1024
+    }
+  },
+  
+  "_comment_fusion": "========== Visual-Action Fusion ==========",
+  "fusion_cfg": {
+    "hidden_size": 1024,
+    "query_num": 8,
+    "num_layers": 4,
+    "num_attention_heads": 16,
+    "dropout": 0.0
+  },
+  
+  "_comment_vq": "========== Vector Quantizer ==========",
+  "vq_cfg": {
+    "n_e": 128,
+    "e_dim": 32,
+    "beta": 0.25,
+    "sane_index_shape": false,
+    "num_stages": 2,
+    "stages": [
+      {
+        "n_e": 128,
+        "e_dim": 32,
+        "beta": 0.5
+      },
+      {
+        "n_e": 128,
+        "e_dim": 32,
+        "beta": 0.1
+      }
+    ]
+  },
+  "_comment_vision_decoder": "========== Vision Decoder (DINO Hidden State Mode) ==========",
+  "vision_decoder_cfg": {
+    "hidden_size": 1024,
+    "num_hidden_layers": 12,
+    "num_attention_heads": 16,
+    "intermediate_size": 3072,
+    "hidden_dropout_prob": 0.0,
+    "attention_probs_dropout_prob": 0.0,
+    "image_size": 224,
+    "patch_size": 14,
+    "encoder_stride": 14,
+    "num_patches": 256,
+    "num_channels": 3,
+    "query_num": 8,
+    "input_hidden_size": 1024,
+    "latent_motion_dim": 1024,
+    "_comment_dino": "DINO mode: input/output are hidden states, not images",
+    "is_io_hidden_states": true
+  },
+  
+  "_comment_action_decoder": "========== Action Decoder (ResNet-based Direct Reconstruction) ==========",
+  "action_decoder_cfg": {
+    "decoder_type": "resnet",
+    "_comment_decoder_type": "Decoder type: 'resnet' (direct reconstruction) or 'flow_matching' (diffusion)",
+    
+    "action_dim": 128,
+    "action_horizon": 16,
+    "hidden_size": 1024,
+    "query_num": 8,
+    
+    "_comment_resnet": "ResNet decoder configuration (symmetric to encoder)",
+    "num_conv_layers": 3,
+    "conv_kernel_size": 5,
+    "upsample_stride": 2,
+    "use_dilation": false,
+    
+    "_comment_m_former": "M-Former configuration (symmetric to encoder)",
+    "m_former_cfg": {
+      "hidden_size": 1024,
+      "num_hidden_layers": 8,
+      "num_attention_heads": 16,
+      "intermediate_size": 3072,
+      "hidden_dropout_prob": 0.0,
+      "attention_probs_dropout_prob": 0.0,
+      "query_num": 8,
+      "input_hidden_size": 1024
+    },
+    
+    "_comment_embodiment": "Embodiment configuration",
+    "max_num_embodiments": 30,
+    "dropout": 0.0
+  },
+  
+  "_comment_training": "========== Training Configuration (DINO Mode) ==========",
+  "reconstruction_loss_weights": {
+    "vision": 1.0,
+    "action": 1.0,
+    "vq_commitment": 1.0,
+    "lpips": 0.0
+  },
+  "_comment_lpips": "DINO mode: LPIPS disabled, using cosine similarity for vision reconstruction",
+  "use_lpips_loss": false,
+  
+  "use_image_type_embedding": true,
+  "bridge_projector_mid_dim": 1024,
+  
+  "_comment_modality": "========== Modality Presence Configuration ==========",
+  "default_pv": 1,
+  "default_pa": 1,
+  
+  "_comment_debug": "========== Debug Configuration ==========",
+  "enable_dimension_debug": false,
+  
+  "_comment_visualization": "========== Visualization Configuration (Disabled for DINO) ==========",
+  "enable_visualization": false,
+  "enable_action_visualization": false,
+  "visualization_save_dir": "visualizations",
+  "visualization_freq": 1000,
+  "visualization_num_samples": 4,
+  
+  "_comment_trainable": "========== Default Trainable Flags ==========",
+  "tune_vision_model": false,
+  "tune_vision_m_former": true,
+  "tune_bridge_projector": true,
+  "tune_action_encoder": true,
+  "tune_fusion": true,
+  "tune_vq": true,
+  "tune_vision_decoder": true,
+  "tune_action_decoder_projector": true,
+  "tune_action_decoder_diffusion": true,
+  "tune_image_type_embedding": true
+}
+

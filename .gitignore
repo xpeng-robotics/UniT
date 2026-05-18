@@ -1,0 +1,161 @@
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# build artifacts
+
+.eggs/
+.mypy_cache
+*.egg-info/
+build/
+dist/
+pip-wheel-metadata/
+preprocessing/hrdt
+
+
+# dev tools
+
+.envrc
+.python-version
+.idea
+.venv/
+.vscode/
+/*.iml
+pyrightconfig.json
+.ruff_cache/
+
+# jupyter notebooks
+
+.ipynb_checkpoints
+
+
+# miscellaneous
+
+.cache/
+doc/_build/
+*.swp
+.DS_Store
+
+
+# python
+
+*.pyc
+*.pyo
+__pycache__
+
+
+# testing and continuous integration
+
+.coverage
+.pytest_cache/
+.benchmarks
+
+# documentation build artifacts
+
+docs/build
+site/
+
+# The following ignores are from vila repository
+*.whl
+*_dev
+dev/
+# config.json
+eval_output/
+eval-result/
+hostfile
+core.*
+*.out
+captioner_bk/
+slurm-logs/
+captioner/
+hostfile
+*_dev.py
+*_dev.sh
+
+
+# Python
+__pycache__
+*.pyc
+*.egg-info
+dist
+
+# Log
+*.log
+*.log.*
+
+# Data
+!**/alpaca-data-conversation.json
+
+# Editor
+.idea
+*.swp
+
+# Other
+.DS_Store
+wandb
+
+# Playground
+playground/
+
+# Hydra 
+.hydra/
+
+# Data
+demo_data/gr00t-gr1-apple-to-shelf/
+tmp/
+output/
+outputs/
+decord/
+vgg16-397923af.pth
+corrupted_episodes.json
+corrupted_videos.txt
+
+# Log files
+MUJOCO_LOG.TXT
+
+# Backup code
+code/
+
+# Stray files from accidental pip commands like `pip install xx>=6.2`
+=*
+
+# Conda installer (downloaded locally during environment setup; do not commit)
+Miniconda3-*.sh
+Miniforge3-*.sh
+Anaconda3-*.sh
+
+# Local-only (do not publish to GitHub): CALVIN env checkout + HF reference snippets
+calvin_env/
+tools/
+
+# Local debug probes / scratch scripts
+debug/
+
+# Editable-installed simulation libraries (clone per root README Simulation section)
+third_party/
+
+# Internal experiment launch scripts and logs (replaced by examples/ for public release)
+bash_scripts/
+
+# Local-only: do not commit (keep copies on developer machines only)
+scan.py
+/CONTRIBUTING.md

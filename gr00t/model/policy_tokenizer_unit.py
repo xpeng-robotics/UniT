@@ -1,0 +1,484 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import json
+from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
+import numpy as np
+import torch
+from huggingface_hub import snapshot_download
+from huggingface_hub.errors import HFValidationError, RepositoryNotFoundError
+
+from gr00t.data.dataset import ModalityConfig
+from gr00t.data.embodiment_tags import EmbodimentTag
+from gr00t.data.schema import DatasetMetadata
+from gr00t.data.transform.base import ComposedModalityTransform
+from gr00t.model.gr00t_n1_tokenizer_unit_inference import GR00T_Tokenizer
+
+COMPUTE_DTYPE = torch.bfloat16
+
+
+class BasePolicy(ABC):
+    @abstractmethod
+    def get_action(self, observations: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Abstract method to get the action for a given state.
+
+        Args:
+            observations: The observations from the environment.
+
+        Returns:
+            The action to take in the environment in dictionary format.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_modality_config(self) -> Dict[str, ModalityConfig]:
+        """
+        Return the modality config of the policy.
+        """
+        raise NotImplementedError
+
+
+class Gr00tTokenizerPolicy(BasePolicy):
+    """
+    A wrapper for Gr00t Tokenizer model checkpoints that handles loading the model, applying transforms,
+    making predictions, and unapplying transforms. This loads some custom configs, stats
+    and metadata related to the model checkpoints used
+    in the Gr00t Tokenizer model.
+    """
+
+    def __init__(
+        self,
+        model_path: str,
+        embodiment_tag: Union[str, EmbodimentTag],
+        modality_config: Dict[str, ModalityConfig],
+        modality_transform: ComposedModalityTransform,
+        denoising_steps: Optional[int] = None,
+        device: Union[int, str] = "cuda" if torch.cuda.is_available() else "cpu",
+        compute_bridge_loss: bool = False,
+    ):
+        """
+        Initialize the Gr00tPolicy.
+
+        Args:
+            model_path (str): Path to the model checkpoint directory or the huggingface hub id.
+            modality_config (Dict[str, ModalityConfig]): The modality config for the model.
+            modality_transform (ComposedModalityTransform): The modality transform for the model.
+            embodiment_tag (Union[str, EmbodimentTag]): The embodiment tag for the model.
+            denoising_steps: Number of denoising steps to use for the action head.
+            device (Union[int, str]): Device to run the model on.
+        """
+        try:
+            # NOTE(YL) this returns the local path to the model which is normally
+            # saved in ~/.cache/huggingface/hub/
+            model_path = snapshot_download(model_path, repo_type="model")
+            # HFValidationError, RepositoryNotFoundError
+        except (HFValidationError, RepositoryNotFoundError):
+            print(
+                f"Model not found or avail in the huggingface hub. Loading from local path: {model_path}"
+            )
+
+        self._modality_config = modality_config
+        self._modality_transform = modality_transform
+        self._modality_transform.eval()  # set this to eval mode
+        self.model_path = Path(model_path)
+        self.device = device
+
+        # Convert string embodiment tag to EmbodimentTag enum if needed
+        if isinstance(embodiment_tag, str):
+            self.embodiment_tag = EmbodimentTag(embodiment_tag)
+        else:
+            self.embodiment_tag = embodiment_tag
+
+        # Save compute_bridge_loss flag for get_action_and_bridgeloss()
+        self.compute_bridge_loss = compute_bridge_loss
+
+        # Load model
+        self._load_model(model_path, compute_bridge_loss=compute_bridge_loss)
+        # Load transforms
+        self._load_metadata(self.model_path / "experiment_cfg")
+        # Load horizons
+        self._load_horizons()
+
+        if denoising_steps is not None:
+            if hasattr(self.model, "action_decoder") and hasattr(
+                self.model.action_decoder, "num_inference_timesteps"
+            ):
+                self.model.action_decoder.num_inference_timesteps = denoising_steps
+                print(f"Set action denoising steps to {denoising_steps}")
+
+    def apply_transforms(self, obs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Apply transforms to the observation.
+
+        Args:
+            obs (Dict[str, Any]): The observation to transform.
+
+        Returns:
+            Dict[str, Any]: The transformed observation.
+        """
+        # Ensure correct dimensions before applying transforms
+        return self._modality_transform(obs)
+
+    def unapply_transforms(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Unapply transforms to the action.
+
+        Args:
+            action (Dict[str, Any]): The action to unapply transforms to.
+
+        Returns:
+            Dict[str, Any]: The untransformed action.
+        """
+        return self._modality_transform.unapply(action)
+
+    def get_action(self, observations: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Make a prediction with the model.
+        Args:
+            obs (Dict[str, Any]): The observation to make a prediction for.
+
+        e.g. obs = {
+            "video.<>": np.ndarray,  # (T, H, W, C)
+            "state.<>": np.ndarray, # (T, D)
+            "annotation.<>": np.ndarray, # (T, )
+        }
+
+        or with batched input:
+        e.g. obs = {
+            "video.<>": np.ndarray,, # (B, T, H, W, C)
+            "state.<>": np.ndarray, # (B, T, D)
+            "annotation.<>": np.ndarray, # (B, T, )
+        }
+
+        Returns:
+            Dict[str, Any]: The predicted action.
+        """
+        # Create a copy to avoid mutating input
+        obs_copy = observations.copy()
+
+        is_batch = self._check_state_is_batched(obs_copy)
+        if not is_batch:
+            obs_copy = unsqueeze_dict_values(obs_copy)
+
+        # Convert to numpy arrays
+        for k, v in obs_copy.items():
+            if not isinstance(v, np.ndarray):
+                obs_copy[k] = np.array(v)
+
+        normalized_input = self.apply_transforms(obs_copy)
+        normalized_action = self._get_action_from_normalized_input(normalized_input)
+        unnormalized_action = self._get_unnormalized_action(normalized_action)
+
+        if not is_batch:
+            unnormalized_action = squeeze_dict_values(unnormalized_action)
+        return unnormalized_action
+
+    def get_latent_tokens(self, observations: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get latent tokens (VQ indices and quantized embeddings) from the tokenizer.
+        
+        Args:
+            observations: The observations from the environment.
+        
+        Returns:
+            Dict containing:
+                - 'indices': VQ indices [B, Q, L] or [B, Q*L]
+                - 'quant': Quantized embeddings [B, Q, codebook_dim]
+        """
+        # Create a copy to avoid mutating input
+        obs_copy = observations.copy()
+
+        is_batch = self._check_state_is_batched(obs_copy)
+        if not is_batch:
+            obs_copy = unsqueeze_dict_values(obs_copy)
+
+        # Convert to numpy arrays
+        for k, v in obs_copy.items():
+            if not isinstance(v, np.ndarray):
+                obs_copy[k] = np.array(v)
+
+        normalized_input = self.apply_transforms(obs_copy)
+        
+        with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=COMPUTE_DTYPE):
+            # Use return_motion_token_ids_only=True to get latent tokens
+            model_output = self.model.forward(normalized_input, return_motion_token_ids_only=True)
+        
+        result = {
+            'indices': model_output['indices'].cpu().numpy(),  # VQ indices
+            'quant': model_output['quant'].cpu().float().numpy(),  # Quantized embeddings (convert bf16 to fp32)
+            'before_quant': model_output['before_quant'].cpu().float().numpy(),  # Before quant embeddings
+        }
+        
+        if not is_batch:
+            result['indices'] = np.squeeze(result['indices'], axis=0)
+            result['quant'] = np.squeeze(result['quant'], axis=0)
+            result['before_quant'] = np.squeeze(result['before_quant'], axis=0)
+            
+        return result
+
+    def get_action_and_bridgeloss(self, observations: Dict[str, Any]) -> Dict[str, Any]:
+        # Create a copy to avoid mutating input
+        obs_copy = observations.copy()
+
+        is_batch = self._check_state_is_batched(obs_copy)
+        if not is_batch:
+            obs_copy = unsqueeze_dict_values(obs_copy)
+
+        # Convert to numpy arrays
+        for k, v in obs_copy.items():
+            if not isinstance(v, np.ndarray):
+                obs_copy[k] = np.array(v)
+
+        normalized_input = self.apply_transforms(obs_copy)
+
+        with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=COMPUTE_DTYPE):
+            model_pred = self.model.get_action(normalized_input)
+        normalized_action = model_pred["action_pred"].float()
+
+        normalized_action_np = normalized_action.cpu().numpy()
+
+        normalized_gt_action = normalized_input.get("action", None)
+        if normalized_gt_action is not None:
+            if isinstance(normalized_gt_action, torch.Tensor):
+                normalized_gt_action_np = normalized_gt_action.cpu().numpy()
+            else:
+                normalized_gt_action_np = normalized_gt_action
+        else:
+            normalized_gt_action_np = None
+        
+        action_mask = normalized_input.get("action_mask", None)
+        if action_mask is not None:
+            if isinstance(action_mask, torch.Tensor):
+                action_mask_np = action_mask.cpu().numpy()
+            else:
+                action_mask_np = action_mask
+        else:
+            action_mask_np = None
+
+        # Same as Gr00tUniTPolicy._get_unnormalized_action: keep state for HierarchicalRelativeTransform.unapply.
+        unapply_data = normalized_input.copy()
+        unapply_data["action"] = normalized_action.cpu()
+
+        for k, v in unapply_data.items():
+            if isinstance(v, torch.Tensor):
+                unapply_data[k] = v.to(torch.float64)
+            elif isinstance(v, np.ndarray):
+                unapply_data[k] = torch.from_numpy(v).to(torch.float64)
+
+        unnormalized_action = self.unapply_transforms(unapply_data)
+
+        if not is_batch:
+            unnormalized_action = squeeze_dict_values(unnormalized_action)
+            normalized_action_np = np.squeeze(normalized_action_np, axis=0)
+            if normalized_gt_action_np is not None:
+                normalized_gt_action_np = np.squeeze(normalized_gt_action_np, axis=0)
+            if action_mask_np is not None:
+                action_mask_np = np.squeeze(action_mask_np, axis=0)
+
+        unnormalized_action['normalized_pred_action'] = normalized_action_np
+        if normalized_gt_action_np is not None:
+            unnormalized_action['normalized_gt_action'] = normalized_gt_action_np
+        if action_mask_np is not None:
+            unnormalized_action['action_mask'] = action_mask_np
+
+        # Vision reconstruction loss (bridge_loss)
+        bridge_loss = model_pred.get("vision_recon_loss", None)
+        if bridge_loss is not None:
+            bridge_loss = np.squeeze(bridge_loss.float().cpu().numpy(), axis=0)
+            unnormalized_action['bridge_loss'] = bridge_loss
+        
+        # Cosine similarity metrics (for DINO mode)
+        vision_cos_sim = model_pred.get("vision_cos_sim", None)
+        if vision_cos_sim is not None:
+            unnormalized_action['vision_cos_sim'] = np.squeeze(vision_cos_sim.float().cpu().numpy(), axis=0)
+        
+        vision_cos_sim_baseline = model_pred.get("vision_cos_sim_baseline", None)
+        if vision_cos_sim_baseline is not None:
+            unnormalized_action['vision_cos_sim_baseline'] = np.squeeze(vision_cos_sim_baseline.float().cpu().numpy(), axis=0)
+        
+        # Reconstructed images (for Pixel mode video generation)
+        reconstructed_images = model_pred.get("reconstructed_images", None)
+        if reconstructed_images is not None:
+            unnormalized_action['reconstructed_images'] = reconstructed_images.cpu()  # Keep as tensor (B, C, H, W)
+        
+        target_images = model_pred.get("target_images", None)
+        if target_images is not None:
+            unnormalized_action['target_images'] = target_images.cpu()  # Keep as tensor (B, C, H, W)
+
+        return unnormalized_action
+
+    def _get_action_from_normalized_input(self, normalized_input: Dict[str, Any]) -> torch.Tensor:
+        # Set up autocast context if needed
+        with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=COMPUTE_DTYPE):
+            model_pred = self.model.get_action(normalized_input)
+
+        normalized_action = model_pred["action_pred"].float()
+        return normalized_action
+
+    def _get_unnormalized_action(self, normalized_action: torch.Tensor) -> Dict[str, Any]:
+        return self.unapply_transforms({"action": normalized_action.cpu()})
+
+    def get_modality_config(self) -> Dict[str, ModalityConfig]:
+        """
+        Get the modality config for the model, overrides the base class method
+        """
+        return self._modality_config
+
+    @property
+    def modality_config(self) -> Dict[str, ModalityConfig]:
+        return self._modality_config
+
+    @property
+    def modality_transform(self) -> ComposedModalityTransform:
+        return self._modality_transform
+
+    @property
+    def video_delta_indices(self) -> np.ndarray:
+        """Get the video delta indices."""
+        return self._video_delta_indices
+
+    @property
+    def state_delta_indices(self) -> np.ndarray | None:
+        """Get the state delta indices."""
+        return self._state_delta_indices
+
+    @property
+    def denoising_steps(self) -> int:
+        """Get the number of denoising steps."""
+        return self.model.action_decoder.num_inference_timesteps
+
+    @denoising_steps.setter
+    def denoising_steps(self, value: int):
+        """Set the number of denoising steps."""
+        self.model.action_decoder.num_inference_timesteps = value
+
+    def _check_state_is_batched(self, obs: Dict[str, Any]) -> bool:
+        for k, v in obs.items():
+            if "state" in k and len(v.shape) < 3:  # (B, Time, Dim)
+                return False
+        return True
+
+    def _load_model(self, model_path, compute_bridge_loss=False):
+        """
+        Load the GR00T Tokenizer model.
+        
+        Note: Unlike Bridge model, Tokenizer does not need dynamic action_horizon adjustment
+        as action_encoder and action_decoder share the same action_horizon configuration.
+        """
+        # Load Tokenizer model
+        model = GR00T_Tokenizer.from_pretrained(
+            pretrained_model_name_or_path=model_path,
+            torch_dtype=COMPUTE_DTYPE,
+            compute_bridge_loss=compute_bridge_loss,
+            # output_dir is omitted - uses default value
+            # All tune_* parameters use default values (typically False for inference)
+        )
+        model.eval()  # Set model to eval mode
+        
+        # Move model to device
+        model.to(device=self.device)
+        
+        self.model = model
+
+    def _load_metadata(self, exp_cfg_dir: Path):
+        """Load the transforms for the model."""
+        # Load metadata for normalization stats
+        metadata_path = exp_cfg_dir / "metadata.json"
+        with open(metadata_path, "r") as f:
+            metadatas = json.load(f)
+
+        # Get metadata for the specific embodiment
+        metadata_dict = metadatas.get(self.embodiment_tag.value)
+        if metadata_dict is None:
+            raise ValueError(
+                f"No metadata found for embodiment tag: {self.embodiment_tag.value}",
+                f"make sure the metadata.json file is present at {metadata_path}",
+            )
+
+        metadata = DatasetMetadata.model_validate(metadata_dict)
+
+        self._modality_transform.set_metadata(metadata)
+        self.metadata = metadata
+
+    def _load_horizons(self):
+        """Load the horizons needed for the model."""
+        # Get modality configs
+        # Video horizons
+        self._video_delta_indices = np.array(self._modality_config["video"].delta_indices)
+        self._assert_delta_indices(self._video_delta_indices)
+        self._video_horizon = len(self._video_delta_indices)
+        # State horizons (if used)
+        if "state" in self._modality_config:
+            self._state_delta_indices = np.array(self._modality_config["state"].delta_indices)
+            self._assert_delta_indices(self._state_delta_indices)
+            self._state_horizon = len(self._state_delta_indices)
+        else:
+            self._state_horizon = None
+            self._state_delta_indices = None
+
+    def _assert_delta_indices(self, delta_indices: np.ndarray):
+        """Assert that the delta indices are valid."""
+        # All delta indices should be non-positive because there's no way to get the future observations
+        assert np.all(delta_indices <= 0), f"{delta_indices=}"
+        # The last delta index should be 0 because it doesn't make sense to not use the latest observation
+        assert delta_indices[-1] == 0, f"{delta_indices=}"
+        if len(delta_indices) > 1:
+            # The step is consistent
+            assert np.all(
+                np.diff(delta_indices) == delta_indices[1] - delta_indices[0]
+            ), f"{delta_indices=}"
+            # And the step is positive
+            assert (delta_indices[1] - delta_indices[0]) > 0, f"{delta_indices=}"
+
+
+#######################################################################################################
+
+
+# Helper functions
+def unsqueeze_dict_values(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Unsqueeze the values of a dictionary.
+    This converts the data to be batched of size 1.
+    """
+    unsqueezed_data = {}
+    for k, v in data.items():
+        if isinstance(v, np.ndarray):
+            unsqueezed_data[k] = np.expand_dims(v, axis=0)
+        elif isinstance(v, list):
+            unsqueezed_data[k] = np.expand_dims(np.array(v), axis=0)  # Fixed
+        elif isinstance(v, torch.Tensor):
+            unsqueezed_data[k] = v.unsqueeze(0)
+        else:
+            unsqueezed_data[k] = v
+    return unsqueezed_data
+
+
+def squeeze_dict_values(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Squeeze the values of a dictionary. This removes the batch dimension.
+    """
+    squeezed_data = {}
+    for k, v in data.items():
+        if isinstance(v, np.ndarray):
+            squeezed_data[k] = np.squeeze(v, axis=0)  # Fixed: only remove batch dim
+        elif isinstance(v, torch.Tensor):
+            squeezed_data[k] = v.squeeze(0)  # Fixed: only remove batch dim
+        else:
+            squeezed_data[k] = v
+    return squeezed_data
