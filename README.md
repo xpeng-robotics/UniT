@@ -338,6 +338,9 @@ If you find this work useful, please cite:
   author={Chen, Boyu and Chen, Yi and Qiu, Lu and Bai, Jerry and Ge, Yuying and Ge, Yixiao},
   journal={arXiv preprint arXiv:2604.19734},
   year={2026},
+  eprint={2604.19734},
+  archivePrefix={arXiv},
+  primaryClass={cs.RO},
   url={https://arxiv.org/abs/2604.19734}
 }
 ```
