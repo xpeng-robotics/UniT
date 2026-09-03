@@ -334,10 +334,11 @@ If you find this work useful, please cite:
 
 ```bibtex
 @article{chen2026unit,
-  title={UniT: Toward a Unified Physical Language for Human-to-Humanoid Policy Learning and World Modeling},
+  title={{UniT}: Toward a Unified Physical Language for Human-to-Humanoid Policy Learning and World Modeling},
   author={Chen, Boyu and Chen, Yi and Qiu, Lu and Bai, Jerry and Ge, Yuying and Ge, Yixiao},
   journal={arXiv preprint arXiv:2604.19734},
-  year={2026}
+  year={2026},
+  url={https://arxiv.org/abs/2604.19734}
 }
 ```
 
