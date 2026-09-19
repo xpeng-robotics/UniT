@@ -341,6 +341,7 @@ If you find this work useful, please cite:
   eprint={2604.19734},
   archivePrefix={arXiv},
   primaryClass={cs.RO},
+  doi={10.48550/arXiv.2604.19734},
   url={https://arxiv.org/abs/2604.19734}
 }
 ```
